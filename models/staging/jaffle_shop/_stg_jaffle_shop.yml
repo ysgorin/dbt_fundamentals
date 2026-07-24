@@ -1,7 +1,9 @@
 models:
   - name: stg_jaffle_shop__customers
+    description: one unique customer per row
     columns: 
       - name: customer_id
+        description: the primary key
         data_tests:
           - unique
           - not_null
