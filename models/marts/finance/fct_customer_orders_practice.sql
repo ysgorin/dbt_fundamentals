@@ -55,15 +55,13 @@ CUSTOMER_ORDERS as (
 
 X as (
     select
-        P.ORDER_ID,
-        sum(T2.TOTAL_AMOUND_PAID) as CLV_BAD
-    from PAID_ORDERS as P
-    left join PAID_ORDERS as T2
-        on
-            P.CUSTOMER_ID = T2.CUSTOMER_ID
-            and P.ORDER_ID >= T2.ORDER_ID
-    group by P.ORDER_ID
-    order by P.ORDER_ID
+        ORDER_ID,
+        sum(TOTAL_AMOUND_PAID) over (
+            partition by CUSTOMER_ID
+            order by ORDER_ID
+        ) as CLV
+    from PAID_ORDERS
+    order by ORDER_ID
 ),
 
 FINAL as (
@@ -79,7 +77,7 @@ FINAL as (
                 then 'new'
             else 'return'
         end as NVSR,
-        X.CLV_BAD as CUSTOMER_LIFETIME_VALUE,
+        X.CLV as CUSTOMER_LIFETIME_VALUE,
         C.FIRST_ORDER_DATE as FDOS
     from PAID_ORDERS as P
     left join CUSTOMER_ORDERS as C
