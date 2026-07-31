@@ -1,63 +1,93 @@
 -- Import CTEs
-with raw_orders as (
+with RAW_ORDERS as (
     select *
     from {{ source('jaffle_shop', 'orders') }}
 ),
 
-raw_customers as (
+RAW_CUSTOMERS as (
     select *
     from {{ source('jaffle_shop', 'customers') }}
 ),
 
-raw_payments as (
+RAW_PAYMENTS as (
     select *
     from {{ source('stripe', 'payment') }}
 ),
 
-paid_orders as (select Orders.ID as order_id,
-        Orders.USER_ID    as customer_id,
-        Orders.ORDER_DATE AS order_placed_at,
-            Orders.STATUS AS order_status,
-        p.total_amount_paid,
-        p.payment_finalized_date,
-        C.FIRST_NAME    as customer_first_name,
-            C.LAST_NAME as customer_last_name
-    FROM raw_orders as Orders
-    left join (select ORDERID as order_id, max(CREATED) as payment_finalized_date, sum(AMOUNT) / 100.0 as total_amount_paid
-from raw_payments
-where STATUS <> 'fail'
-group by 1) p ON orders.ID = p.order_id
-left join raw_customers C on orders.USER_ID = C.ID ),
+P as (
+    select
+        ORDERID as ORDER_ID,
+        max(CREATED) as PAYMENT_FINALIZED_DATE,
+        sum(AMOUNT) / 100.0 as TOTAL_AMOUND_PAID
+    from RAW_PAYMENTS
+    where STATUS <> 'fail'
+    group by ORDERID
+),
 
-customer_orders 
-    as (select C.ID as customer_id
-        , min(ORDER_DATE) as first_order_date
-        , max(ORDER_DATE) as most_recent_order_date
-        , count(ORDERS.ID) AS number_of_orders
-    from raw_customers C 
-    left join raw_orders as Orders
-    on orders.USER_ID = C.ID 
-    group by 1)
+PAID_ORDERS as (
+    select
+        ORDERS.ID as ORDER_ID,
+        ORDERS.USER_ID as CUSTOMER_ID,
+        ORDERS.ORDER_DATE as ORDER_PLACED_AT,
+        ORDERS.STATUS as ORDER_STATUS,
+        P.TOTAL_AMOUND_PAID,
+        P.PAYMENT_FINALIZED_DATE,
+        C.FIRST_NAME as CUSTOMER_FIRST_NAME,
+        C.LAST_NAME as CUSTOMER_LAST_NAME
+    from RAW_ORDERS as ORDERS
+    left join P
+        on ORDERS.ID = P.ORDER_ID
+    left join RAW_CUSTOMERS as C
+        on ORDERS.USER_ID = C.ID
+),
 
-select
-    p.*,
-    ROW_NUMBER() OVER (ORDER BY p.order_id) as transaction_seq,
-    ROW_NUMBER() OVER (PARTITION BY customer_id ORDER BY p.order_id) as customer_sales_seq,
-    CASE WHEN c.first_order_date = p.order_placed_at
-    THEN 'new'
-    ELSE 'return' END as nvsr,
-    x.clv_bad as customer_lifetime_value,
-    c.first_order_date as fdos
-    FROM paid_orders p
-    left join customer_orders as c USING (customer_id)
-    LEFT OUTER JOIN 
-    (
-            select
-            p.order_id,
-            sum(t2.total_amount_paid) as clv_bad
-        from paid_orders p
-        left join paid_orders t2 on p.customer_id = t2.customer_id and p.order_id >= t2.order_id
-        group by 1
-        order by p.order_id
-    ) x on x.order_id = p.order_id
-    ORDER BY order_id
+CUSTOMER_ORDERS as (
+    select
+        C.ID as CUSTOMER_ID,
+        min(ORDERS.ORDER_DATE) as FIRST_ORDER_DATE,
+        max(ORDERS.ORDER_DATE) as MOST_RECENT_ORDER_DATE,
+        count(ORDERS.ID) as NUMBER_OF_ORDERS
+    from RAW_CUSTOMERS as C
+    left join RAW_ORDERS as ORDERS
+        on C.ID = ORDERS.USER_ID
+    group by C.ID
+),
+
+X as (
+    select
+        P.ORDER_ID,
+        sum(T2.TOTAL_AMOUND_PAID) as CLV_BAD
+    from PAID_ORDERS as P
+    left join PAID_ORDERS as T2
+        on
+            P.CUSTOMER_ID = T2.CUSTOMER_ID
+            and P.ORDER_ID >= T2.ORDER_ID
+    group by P.ORDER_ID
+    order by P.ORDER_ID
+),
+
+FINAL as (
+    select
+        P.*,
+        row_number() over (order by P.ORDER_ID) as TRANSACTION_SEQ,
+        row_number() over (
+            partition by P.CUSTOMER_ID
+            order by P.ORDER_ID
+        ) as CUSTOMER_SALES_SEQ,
+        case
+            when C.FIRST_ORDER_DATE = P.ORDER_PLACED_AT
+                then 'new'
+            else 'return'
+        end as NVSR,
+        X.CLV_BAD as CUSTOMER_LIFETIME_VALUE,
+        C.FIRST_ORDER_DATE as FDOS
+    from PAID_ORDERS as P
+    left join CUSTOMER_ORDERS as C
+        on P.CUSTOMER_ID = C.CUSTOMER_ID
+    left outer join X
+        on P.ORDER_ID = X.ORDER_ID
+    order by P.ORDER_ID
+)
+
+select *
+from FINAL;
