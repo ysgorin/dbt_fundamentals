@@ -38,6 +38,18 @@ orders as (
     from raw_orders
 ),
 
+payments as (
+    select
+        id as payment_id,
+        orderid as order_id,
+        paymentmethod as payment_method,
+        status as payment_status,
+        round(amount / 100.0, 2) as payment_amount,
+        created as payment_created_at,
+        _batched_at
+    from raw_payments
+),
+
 -- Logical CTEs
 customer_order_history as (
     select
@@ -45,20 +57,20 @@ customer_order_history as (
         customers.full_name,
         customers.surname,
         customers.givenname,
-        min(order_date) as first_order_date,
+        min(orders.order_date) as first_order_date,
         min(
             case
                 when orders.order_status not in ('returned', 'return_pending')
-                    then order_date
+                    then orders.order_date
             end
         ) as first_non_returned_order_date,
         max(
             case
                 when orders.order_status not in ('returned', 'return_pending')
-                    then order_date
+                    then orders.order_date
             end
         ) as most_recent_non_returned_order_date,
-        coalesce(max(user_order_seq), 0) as order_count,
+        coalesce(max(orders.user_order_seq), 0) as order_count,
         coalesce(count(
             case
                 when orders.order_status != 'returned'
@@ -68,14 +80,14 @@ customer_order_history as (
         sum(
             case
                 when orders.order_status not in ('returned', 'return_pending')
-                    then round(c.amount / 100.0, 2)
+                    then payments.payment_amount
                 else 0
             end
         ) as total_lifetime_value,
         sum(
             case
                 when orders.order_status not in ('returned', 'return_pending')
-                    then round(c.amount / 100.0 / 2)
+                    then payments.payment_amount
                 else 0
             end
         ) / nullif(
@@ -90,10 +102,10 @@ customer_order_history as (
     from orders
     join customers
         on orders.customer_id = customers.customer_id
-    left outer join raw_payments as c
-        on orders.order_id = c.orderid
+    left outer join payments
+        on orders.order_id = payments.order_id
 
-    where orders.order_status not in ('pending') and c.status != 'fail'
+    where orders.order_status not in ('pending') and payments.payment_status != 'fail'
 
     group by customers.customer_id, customers.full_name, customers.surname, customers.givenname
 ),
@@ -105,12 +117,12 @@ final as (
         orders.customer_id,
         customers.surname,
         customers.givenname,
-        first_order_date,
-        order_count,
-        total_lifetime_value,
-        round(amount / 100.0, 2) as order_value_dollars,
+        customer_order_history.first_order_date,
+        customer_order_history.order_count,
+        customer_order_history.total_lifetime_value,
+        payment_amount as order_value_dollars,
         orders.order_status,
-        payments.status as payment_status
+        payments.payment_status
     from orders
 
     join customers
@@ -119,10 +131,10 @@ final as (
     join customer_order_history
         on orders.customer_id = customer_order_history.customer_id
 
-    left outer join raw_payments as payments
-        on orders.order_id = payments.orderid
+    left outer join payments
+        on orders.order_id = payments.order_id
 
-    where payments.status != 'fail'
+    where payments.payment_status != 'fail'
 )
 
 select *
