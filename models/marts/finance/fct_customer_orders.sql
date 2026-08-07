@@ -89,8 +89,6 @@ customer_order_history as (
     left outer join payments
         on orders.order_id = payments.order_id
 
-    where orders.order_status not in ('pending')
-
     group by customers.customer_id, customers.full_name, customers.surname, customers.givenname
 ),
 
