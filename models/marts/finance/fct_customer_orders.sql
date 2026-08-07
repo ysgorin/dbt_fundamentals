@@ -12,6 +12,7 @@ customers as (
 payments as (
     select *
     from {{ ref('stg_stripe__payments') }}
+    where payment_status != 'fail'
 ),
 
 order_totals as (
@@ -88,7 +89,7 @@ customer_order_history as (
     left outer join payments
         on orders.order_id = payments.order_id
 
-    where orders.order_status not in ('pending') and payments.payment_status != 'fail'
+    where orders.order_status not in ('pending')
 
     group by customers.customer_id, customers.full_name, customers.surname, customers.givenname
 ),
@@ -116,8 +117,6 @@ final as (
 
     left outer join payments
         on orders.order_id = payments.order_id
-
-    where payments.payment_status != 'fail'
 )
 
 select *
