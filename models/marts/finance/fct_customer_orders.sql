@@ -14,6 +14,15 @@ payments as (
     from {{ ref('stg_stripe__payments') }}
 ),
 
+order_totals as (
+    select
+        order_id,
+        payment_status,
+        sum(payment_amount) as order_value_dollars
+    from payments
+    group by order_id, payment_status
+),
+
 -- Logical CTEs
 customer_order_history as (
     select
