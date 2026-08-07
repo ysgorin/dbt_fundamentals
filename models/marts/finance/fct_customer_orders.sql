@@ -1,37 +1,12 @@
 -- Import CTEs
 with orders as (
     select *
-    from {{ ref('stg_jaffle_shop__orders') }}
+    from {{ ref('int_orders') }}
 ),
 
 customers as (
     select *
     from {{ ref('stg_jaffle_shop__customers') }}
-),
-
-payments as (
-    select *
-    from {{ ref('stg_stripe__payments') }}
-    where payment_status != 'fail'
-),
-
-order_totals as (
-    select
-        order_id,
-        payment_status,
-        sum(payment_amount) as order_value_dollars
-    from payments
-    group by order_id, payment_status
-),
-
-order_values_joined as (
-    select
-        orders.*,
-        order_totals.order_value_dollars,
-        order_totals.payment_status
-    from orders
-    left join order_totals
-    on orders.order_id = order_totals.order_id
 ),
 
 -- Logical CTEs
@@ -54,14 +29,14 @@ customer_order_history as (
         sum(
             case
                 when orders.valid_order_date is not null
-                    then payments.payment_amount
+                    then orders.order_value_dollars
                 else 0
             end
         ) as total_lifetime_value,
         sum(
             case
                 when orders.valid_order_date is not null
-                    then payments.payment_amount
+                    then orders.order_value_dollars
                 else 0
             end
         ) / nullif(
@@ -76,8 +51,6 @@ customer_order_history as (
     from orders
     join customers
         on orders.customer_id = customers.customer_id
-    left outer join payments
-        on orders.order_id = payments.order_id
 
     group by customers.customer_id, customers.full_name, customers.surname, customers.givenname
 ),
@@ -92,9 +65,9 @@ final as (
         customer_order_history.first_order_date,
         customer_order_history.order_count,
         customer_order_history.total_lifetime_value,
-        payment_amount as order_value_dollars,
+        orders.order_value_dollars,
         orders.order_status,
-        payments.payment_status
+        orders.payment_status
     from orders
 
     join customers
@@ -102,9 +75,6 @@ final as (
 
     join customer_order_history
         on orders.customer_id = customer_order_history.customer_id
-
-    left outer join payments
-        on orders.order_id = payments.order_id
 )
 
 select *
