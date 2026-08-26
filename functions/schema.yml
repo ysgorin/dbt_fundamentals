@@ -1,0 +1,10 @@
+functions:
+  - name: safe_divide
+    description: My UDF that safely divides two numbers, returning null if the denominator is zero
+    arguments:
+      - name: numerator
+        data_type: numeric
+      - name: denominator
+        data_type: numeric
+    returns:
+      data_type: numeric
